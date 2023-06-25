@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\ProductVariantPrice;
+use App\Models\ProductImage;
 use App\Models\Variant;
 use Illuminate\Http\Request;
 use Exception;
+use App\Converter\NumberConverter;
+
 
 class ProductController extends Controller
 {
@@ -72,7 +75,69 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
+        try{
+            // dd( $request->file('product_image'));
+            $product = Product::create([
+                'title' => $request->title,
+                'description' => $request->description,
+                'sku'=> $request->sku,
+            ]);
+            // dd($request->product_image);
+            // store product image
+            // $product_image = new ProductImage();
+            // if($request->product_image!=null){
+            //     foreach($request->product_image as $img){
+            //         // dd($img);
+            //         $file = $img;
+            //         $filename = time().'-'.uniqid().'.'.$file->getClientOriginalExtension();
+            //         $file->move(public_path('uploads/products'), $filename);
+            //         // save filename to database
+            //         $product_image->create(['product_id' => $product->id, 'file_path' => $filename]);
+            //     }
+            // }
+            // store product variant
+           
+                // $product_variant = new ProductVariant();
+            foreach($request->product_variant as $variant){
+                
+                // convert variant as object
+                //dd($variant['tags']);
+                foreach($variant['tags'] as $tag){
+                    //dd($tag);
+                    $product_variant=ProductVariant::create(['variant'=>$tag, 'variant_id'=>$variant['option'], 'product_id'=>$product->id]);
+                    
+                }
+            }
+            
+            // store product variant prices
+            foreach($request->product_variant_prices as $price){
+                $pv_prices = new ProductVariantPrice();
+                //$price = json_decode($price);
+                $attrs = explode("/", $price["title"]);
 
+                $product_variant_ids= [];
+                for( $i=0; $i<count($attrs)-1; $i++){
+                    
+                    $product_variant_ids[] = ProductVariant::select('id')->where('variant', $attrs[$i])->latest()->first()->id;
+                }
+
+                for( $i=1; $i<=count($product_variant_ids); $i++){
+                    // number to word conversion
+                    $num =NumberConverter::convertNumber($i);
+                    // dd($num);
+                    $pv_prices->{'product_variant_'.$num} = $product_variant_ids[$i-1];
+                }
+                $pv_prices->price = $price["price"];
+                $pv_prices->stock = $price["stock"];
+                $pv_prices->product_id = $product->id;
+                $pv_prices->save();
+            }
+        
+
+    } catch (Exception $e) {
+        return response($e, 500);
+    }
+    return "Product Createtion Successful";  
     }
 
 

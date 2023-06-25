@@ -35,21 +35,6 @@
                     @endforelse
                     </select>
                 </div>
-                {{-- <form action="{{route('search')}}" method="post" class="card-header">
-                    @csrf
-                    <div class="form-row justify-content-between">
-                        <div class="col-md-2">
-                            <input type="text" name="title" id="title" placeholder="Product Title" class="form-control" value="">
-                        </div>
-                        <div class="col-md-2">
-                            <select name="variant" id="select" class="form-control">
-                                <option value="" selected>Select variant</option>
-                            @forelse($product_variants as $item)
-                                <option value="{{$item->id}}">{{$item->variant}}</option>
-                            @empty
-                            @endforelse
-                            </select>
-                        </div> --}}
 
                 <div class="col-md-3">
                     <div class="input-group">

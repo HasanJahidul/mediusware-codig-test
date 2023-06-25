@@ -9,6 +9,36 @@
  */
 namespace PHPUnit\TextUI;
 
+use const PATH_SEPARATOR;
+use const PHP_EOL;
+use const STDIN;
+use function array_keys;
+use function assert;
+use function class_exists;
+use function explode;
+use function extension_loaded;
+use function fgets;
+use function file_exists;
+use function file_get_contents;
+use function file_put_contents;
+use function getcwd;
+use function ini_get;
+use function ini_set;
+use function is_callable;
+use function is_dir;
+use function is_file;
+use function is_numeric;
+use function is_string;
+use function printf;
+use function realpath;
+use function sort;
+use function sprintf;
+use function str_replace;
+use function stream_resolve_include_path;
+use function strrpos;
+use function substr;
+use function trim;
+use function version_compare;
 use PharIo\Manifest\ApplicationName;
 use PharIo\Manifest\Exception as ManifestException;
 use PharIo\Manifest\ManifestLoader;
@@ -31,8 +61,9 @@ use PHPUnit\Util\Printer;
 use PHPUnit\Util\TestDox\CliTestDoxPrinter;
 use PHPUnit\Util\TextTestListRenderer;
 use PHPUnit\Util\XmlTestListRenderer;
+use ReflectionClass;
+use ReflectionException;
 use SebastianBergmann\FileIterator\Facade as FileIteratorFacade;
-
 use Throwable;
 
 /**
@@ -203,7 +234,7 @@ class Command
         try {
             $result = $runner->doRun($suite, $this->arguments, $this->warnings, $exit);
         } catch (Exception $e) {
-            print $e->getMessage() . \PHP_EOL;
+            print $e->getMessage() . PHP_EOL;
         }
 
         $return = TestRunner::FAILURE_EXIT;
@@ -277,10 +308,10 @@ class Command
     protected function handleArguments(array $argv): void
     {
         try {
-            $this->options = Getopt::getopt(
+            $this->options = Getopt::parse(
                 $argv,
                 'd:c:hv',
-                \array_keys($this->longOptions)
+                array_keys($this->longOptions)
             );
         } catch (Exception $t) {
             $this->exitWithErrorMessage($t->getMessage());
@@ -314,7 +345,7 @@ class Command
                     break;
 
                 case '--columns':
-                    if (\is_numeric($option[1])) {
+                    if (is_numeric($option[1])) {
                         $this->arguments['columns'] = (int) $option[1];
                     } elseif ($option[1] === 'max') {
                         $this->arguments['columns'] = 'max';
@@ -365,13 +396,13 @@ class Command
                     break;
 
                 case 'd':
-                    $ini = \explode('=', $option[1]);
+                    $ini = explode('=', $option[1]);
 
                     if (isset($ini[0])) {
                         if (isset($ini[1])) {
-                            \ini_set($ini[0], $ini[1]);
+                            ini_set($ini[0], $ini[1]);
                         } else {
-                            \ini_set($ini[0], '1');
+                            ini_set($ini[0], '1');
                         }
                     }
 
@@ -385,6 +416,7 @@ class Command
                 case 'h':
                 case '--help':
                     $this->showHelp();
+
                     exit(TestRunner::SUCCESS_EXIT);
 
                     break;
@@ -402,16 +434,19 @@ class Command
                 case '--generate-configuration':
                     $this->printVersionString();
 
-                    print 'Generating phpunit.xml in ' . \getcwd() . \PHP_EOL . \PHP_EOL;
+                    print 'Generating phpunit.xml in ' . getcwd() . PHP_EOL . PHP_EOL;
 
                     print 'Bootstrap script (relative to path shown above; default: vendor/autoload.php): ';
-                    $bootstrapScript = \trim(\fgets(\STDIN));
+                    $bootstrapScript = trim(fgets(STDIN));
 
                     print 'Tests directory (relative to path shown above; default: tests): ';
-                    $testsDirectory = \trim(\fgets(\STDIN));
+                    $testsDirectory = trim(fgets(STDIN));
 
                     print 'Source directory (relative to path shown above; default: src): ';
-                    $src = \trim(\fgets(\STDIN));
+                    $src = trim(fgets(STDIN));
+
+                    print 'Cache directory (relative to path shown above; default: .phpunit.cache): ';
+                    $cacheDirectory = trim(fgets(STDIN));
 
                     if ($bootstrapScript === '') {
                         $bootstrapScript = 'vendor/autoload.php';
@@ -425,31 +460,37 @@ class Command
                         $src = 'src';
                     }
 
+                    if ($cacheDirectory === '') {
+                        $cacheDirectory = '.phpunit.cache';
+                    }
+
                     $generator = new ConfigurationGenerator;
 
-                    \file_put_contents(
+                    file_put_contents(
                         'phpunit.xml',
                         $generator->generateDefaultConfiguration(
                             Version::series(),
                             $bootstrapScript,
                             $testsDirectory,
-                            $src
+                            $src,
+                            $cacheDirectory
                         )
                     );
 
-                    print \PHP_EOL . 'Generated phpunit.xml in ' . \getcwd() . \PHP_EOL;
+                    print PHP_EOL . 'Generated phpunit.xml in ' . getcwd() . PHP_EOL;
+                    print 'Make sure to exclude the ' . $cacheDirectory . ' directory from version control.' . PHP_EOL;
 
                     exit(TestRunner::SUCCESS_EXIT);
 
                     break;
 
                 case '--group':
-                    $this->arguments['groups'] = \explode(',', $option[1]);
+                    $this->arguments['groups'] = explode(',', $option[1]);
 
                     break;
 
                 case '--exclude-group':
-                    $this->arguments['excludeGroups'] = \explode(
+                    $this->arguments['excludeGroups'] = explode(
                         ',',
                         $option[1]
                     );
@@ -457,7 +498,7 @@ class Command
                     break;
 
                 case '--test-suffix':
-                    $this->arguments['testSuffixes'] = \explode(
+                    $this->arguments['testSuffixes'] = explode(
                         ',',
                         $option[1]
                     );
@@ -585,7 +626,7 @@ class Command
                     break;
 
                 case '--testdox-group':
-                    $this->arguments['testdoxGroups'] = \explode(
+                    $this->arguments['testdoxGroups'] = explode(
                         ',',
                         $option[1]
                     );
@@ -593,7 +634,7 @@ class Command
                     break;
 
                 case '--testdox-exclude-group':
-                    $this->arguments['testdoxExcludeGroups'] = \explode(
+                    $this->arguments['testdoxExcludeGroups'] = explode(
                         ',',
                         $option[1]
                     );
@@ -657,7 +698,7 @@ class Command
                     break;
 
                 case '--atleast-version':
-                    if (\version_compare(Version::id(), $option[1], '>=')) {
+                    if (version_compare(Version::id(), $option[1], '>=')) {
                         exit(TestRunner::SUCCESS_EXIT);
                     }
 
@@ -667,6 +708,7 @@ class Command
 
                 case '--version':
                     $this->printVersionString();
+
                     exit(TestRunner::SUCCESS_EXIT);
 
                     break;
@@ -762,7 +804,7 @@ class Command
                     break;
 
                 default:
-                    $optionName = \str_replace('--', '', $option[0]);
+                    $optionName = str_replace('--', '', $option[0]);
 
                     $handler = null;
 
@@ -772,8 +814,8 @@ class Command
                         $handler = $this->longOptions[$optionName . '='];
                     }
 
-                    if (isset($handler) && \is_callable([$this, $handler])) {
-                        $this->$handler($option[1]);
+                    if (isset($handler) && is_callable([$this, $handler])) {
+                        $this->{$handler}($option[1]);
                     }
             }
         }
@@ -785,10 +827,10 @@ class Command
         }
 
         if (isset($this->options[1][0]) &&
-            \substr($this->options[1][0], -5, 5) !== '.phpt' &&
-            \substr($this->options[1][0], -4, 4) !== '.php' &&
-            \substr($this->options[1][0], -1, 1) !== '/' &&
-            !\is_dir($this->options[1][0])) {
+            substr($this->options[1][0], -5, 5) !== '.phpt' &&
+            substr($this->options[1][0], -4, 4) !== '.php' &&
+            substr($this->options[1][0], -1, 1) !== '/' &&
+            !is_dir($this->options[1][0])) {
             $this->warnings[] = 'Invocation with class name is deprecated';
         }
 
@@ -798,11 +840,11 @@ class Command
             }
 
             if (isset($this->options[1][1])) {
-                $testFile = \realpath($this->options[1][1]);
+                $testFile = realpath($this->options[1][1]);
 
                 if ($testFile === false) {
                     $this->exitWithErrorMessage(
-                        \sprintf(
+                        sprintf(
                             'Cannot open file "%s".',
                             $this->options[1][1]
                         )
@@ -814,16 +856,16 @@ class Command
             }
 
             if (isset($this->arguments['test']) &&
-                \is_file($this->arguments['test']) &&
-                \strrpos($this->arguments['test'], '.') !== false &&
-                \substr($this->arguments['test'], -5, 5) !== '.phpt') {
-                $this->arguments['testFile'] = \realpath($this->arguments['test']);
-                $this->arguments['test']     = \substr($this->arguments['test'], 0, \strrpos($this->arguments['test'], '.'));
+                is_file($this->arguments['test']) &&
+                strrpos($this->arguments['test'], '.') !== false &&
+                substr($this->arguments['test'], -5, 5) !== '.phpt') {
+                $this->arguments['testFile'] = realpath($this->arguments['test']);
+                $this->arguments['test']     = substr($this->arguments['test'], 0, strrpos($this->arguments['test'], '.'));
             }
 
             if (isset($this->arguments['test']) &&
-                \is_string($this->arguments['test']) &&
-                \substr($this->arguments['test'], -5, 5) === '.phpt') {
+                is_string($this->arguments['test']) &&
+                substr($this->arguments['test'], -5, 5) === '.phpt') {
                 $suite = new TestSuite;
                 $suite->addTestFile($this->arguments['test']);
                 $this->arguments['test'] = $suite;
@@ -831,9 +873,9 @@ class Command
         }
 
         if (isset($includePath)) {
-            \ini_set(
+            ini_set(
                 'include_path',
-                $includePath . \PATH_SEPARATOR . \ini_get('include_path')
+                $includePath . PATH_SEPARATOR . ini_get('include_path')
             );
         }
 
@@ -842,24 +884,24 @@ class Command
         }
 
         if (isset($this->arguments['configuration']) &&
-            \is_dir($this->arguments['configuration'])) {
+            is_dir($this->arguments['configuration'])) {
             $configurationFile = $this->arguments['configuration'] . '/phpunit.xml';
 
-            if (\file_exists($configurationFile)) {
-                $this->arguments['configuration'] = \realpath(
+            if (file_exists($configurationFile)) {
+                $this->arguments['configuration'] = realpath(
                     $configurationFile
                 );
-            } elseif (\file_exists($configurationFile . '.dist')) {
-                $this->arguments['configuration'] = \realpath(
+            } elseif (file_exists($configurationFile . '.dist')) {
+                $this->arguments['configuration'] = realpath(
                     $configurationFile . '.dist'
                 );
             }
         } elseif (!isset($this->arguments['configuration']) &&
             $this->arguments['useDefaultConfiguration']) {
-            if (\file_exists('phpunit.xml')) {
-                $this->arguments['configuration'] = \realpath('phpunit.xml');
-            } elseif (\file_exists('phpunit.xml.dist')) {
-                $this->arguments['configuration'] = \realpath(
+            if (file_exists('phpunit.xml')) {
+                $this->arguments['configuration'] = realpath('phpunit.xml');
+            } elseif (file_exists('phpunit.xml.dist')) {
+                $this->arguments['configuration'] = realpath(
                     'phpunit.xml.dist'
                 );
             }
@@ -871,7 +913,8 @@ class Command
                     $this->arguments['configuration']
                 );
             } catch (Throwable $t) {
-                print $t->getMessage() . \PHP_EOL;
+                print $t->getMessage() . PHP_EOL;
+
                 exit(TestRunner::FAILURE_EXIT);
             }
 
@@ -895,7 +938,7 @@ class Command
                 $this->arguments['stderr'] = $phpunitConfiguration['stderr'];
             }
 
-            if (isset($phpunitConfiguration['extensionsDirectory']) && !isset($this->arguments['noExtensions']) && \extension_loaded('phar')) {
+            if (isset($phpunitConfiguration['extensionsDirectory']) && !isset($this->arguments['noExtensions']) && extension_loaded('phar')) {
                 $this->handleExtensions($phpunitConfiguration['extensionsDirectory']);
             }
 
@@ -937,12 +980,13 @@ class Command
         }
 
         if (isset($this->arguments['printer']) &&
-            \is_string($this->arguments['printer'])) {
+            is_string($this->arguments['printer'])) {
             $this->arguments['printer'] = $this->handlePrinter($this->arguments['printer']);
         }
 
         if (!isset($this->arguments['test'])) {
             $this->showHelp();
+
             exit(TestRunner::EXCEPTION_EXIT);
         }
     }
@@ -952,28 +996,28 @@ class Command
      */
     protected function handleLoader(string $loaderClass, string $loaderFile = ''): ?TestSuiteLoader
     {
-        if (!\class_exists($loaderClass, false)) {
+        if (!class_exists($loaderClass, false)) {
             if ($loaderFile == '') {
                 $loaderFile = Filesystem::classNameToFilename(
                     $loaderClass
                 );
             }
 
-            $loaderFile = \stream_resolve_include_path($loaderFile);
+            $loaderFile = stream_resolve_include_path($loaderFile);
 
             if ($loaderFile) {
                 require $loaderFile;
             }
         }
 
-        if (\class_exists($loaderClass, false)) {
+        if (class_exists($loaderClass, false)) {
             try {
-                $class = new \ReflectionClass($loaderClass);
+                $class = new ReflectionClass($loaderClass);
                 // @codeCoverageIgnoreStart
-            } catch (\ReflectionException $e) {
+            } catch (ReflectionException $e) {
                 throw new Exception(
                     $e->getMessage(),
-                    (int) $e->getCode(),
+                    $e->getCode(),
                     $e
                 );
             }
@@ -982,7 +1026,7 @@ class Command
             if ($class->implementsInterface(TestSuiteLoader::class) && $class->isInstantiable()) {
                 $object = $class->newInstance();
 
-                \assert($object instanceof TestSuiteLoader);
+                assert($object instanceof TestSuiteLoader);
 
                 return $object;
             }
@@ -993,7 +1037,7 @@ class Command
         }
 
         $this->exitWithErrorMessage(
-            \sprintf(
+            sprintf(
                 'Could not use "%s" as loader.',
                 $loaderClass
             )
@@ -1009,23 +1053,23 @@ class Command
      */
     protected function handlePrinter(string $printerClass, string $printerFile = '')
     {
-        if (!\class_exists($printerClass, false)) {
+        if (!class_exists($printerClass, false)) {
             if ($printerFile == '') {
                 $printerFile = Filesystem::classNameToFilename(
                     $printerClass
                 );
             }
 
-            $printerFile = \stream_resolve_include_path($printerFile);
+            $printerFile = stream_resolve_include_path($printerFile);
 
             if ($printerFile) {
                 require $printerFile;
             }
         }
 
-        if (!\class_exists($printerClass)) {
+        if (!class_exists($printerClass)) {
             $this->exitWithErrorMessage(
-                \sprintf(
+                sprintf(
                     'Could not use "%s" as printer: class does not exist',
                     $printerClass
                 )
@@ -1033,12 +1077,12 @@ class Command
         }
 
         try {
-            $class = new \ReflectionClass($printerClass);
+            $class = new ReflectionClass($printerClass);
             // @codeCoverageIgnoreStart
-        } catch (\ReflectionException $e) {
+        } catch (ReflectionException $e) {
             throw new Exception(
                 $e->getMessage(),
-                (int) $e->getCode(),
+                $e->getCode(),
                 $e
             );
             // @codeCoverageIgnoreEnd
@@ -1046,7 +1090,7 @@ class Command
 
         if (!$class->implementsInterface(TestListener::class)) {
             $this->exitWithErrorMessage(
-                \sprintf(
+                sprintf(
                     'Could not use "%s" as printer: class does not implement %s',
                     $printerClass,
                     TestListener::class
@@ -1056,7 +1100,7 @@ class Command
 
         if (!$class->isSubclassOf(Printer::class)) {
             $this->exitWithErrorMessage(
-                \sprintf(
+                sprintf(
                     'Could not use "%s" as printer: class does not extend %s',
                     $printerClass,
                     Printer::class
@@ -1066,7 +1110,7 @@ class Command
 
         if (!$class->isInstantiable()) {
             $this->exitWithErrorMessage(
-                \sprintf(
+                sprintf(
                     'Could not use "%s" as printer: class cannot be instantiated',
                     $printerClass
                 )
@@ -1098,17 +1142,17 @@ class Command
     {
         $this->printVersionString();
 
-        $latestVersion = \file_get_contents('https://phar.phpunit.de/latest-version-of/phpunit');
-        $isOutdated    = \version_compare($latestVersion, Version::id(), '>');
+        $latestVersion = file_get_contents('https://phar.phpunit.de/latest-version-of/phpunit');
+        $isOutdated    = version_compare($latestVersion, Version::id(), '>');
 
         if ($isOutdated) {
-            \printf(
-                'You are not using the latest version of PHPUnit.' . \PHP_EOL .
-                'The latest version is PHPUnit %s.' . \PHP_EOL,
+            printf(
+                'You are not using the latest version of PHPUnit.' . PHP_EOL .
+                'The latest version is PHPUnit %s.' . PHP_EOL,
                 $latestVersion
             );
         } else {
-            print 'You are using the latest version of PHPUnit.' . \PHP_EOL;
+            print 'You are using the latest version of PHPUnit.' . PHP_EOL;
         }
 
         exit(TestRunner::SUCCESS_EXIT);
@@ -1136,7 +1180,7 @@ class Command
             return;
         }
 
-        print Version::getVersionString() . \PHP_EOL . \PHP_EOL;
+        print Version::getVersionString() . PHP_EOL . PHP_EOL;
 
         $this->versionStringPrinted = true;
     }
@@ -1145,7 +1189,7 @@ class Command
     {
         $this->printVersionString();
 
-        print $message . \PHP_EOL;
+        print $message . PHP_EOL;
 
         exit(TestRunner::FAILURE_EXIT);
     }
@@ -1153,7 +1197,7 @@ class Command
     private function handleExtensions(string $directory): void
     {
         foreach ((new FileIteratorFacade)->getFilesAsArray($directory, '.phar') as $file) {
-            if (!\file_exists('phar://' . $file . '/manifest.xml')) {
+            if (!file_exists('phar://' . $file . '/manifest.xml')) {
                 $this->arguments['notLoadedExtensions'][] = $file . ' is not an extension for PHPUnit';
 
                 continue;
@@ -1183,7 +1227,7 @@ class Command
 
             require $file;
 
-            $this->arguments['loadedExtensions'][] = $manifest->getName() . ' ' . $manifest->getVersion()->getVersionString();
+            $this->arguments['loadedExtensions'][] = $manifest->getName()->asString() . ' ' . $manifest->getVersion()->getVersionString();
         }
     }
 
@@ -1191,14 +1235,24 @@ class Command
     {
         $this->printVersionString();
 
-        print 'Available test group(s):' . \PHP_EOL;
+        $this->warnAboutConflictingOptions(
+            'listGroups',
+            [
+                'filter',
+                'groups',
+                'excludeGroups',
+                'testsuite',
+            ]
+        );
+
+        print 'Available test group(s):' . PHP_EOL;
 
         $groups = $suite->getGroups();
-        \sort($groups);
+        sort($groups);
 
         foreach ($groups as $group) {
-            \printf(
-                ' - %s' . \PHP_EOL,
+            printf(
+                ' - %s' . PHP_EOL,
                 $group
             );
         }
@@ -1217,15 +1271,25 @@ class Command
     {
         $this->printVersionString();
 
-        print 'Available test suite(s):' . \PHP_EOL;
+        $this->warnAboutConflictingOptions(
+            'listSuites',
+            [
+                'filter',
+                'groups',
+                'excludeGroups',
+                'testsuite',
+            ]
+        );
+
+        print 'Available test suite(s):' . PHP_EOL;
 
         $configuration = Configuration::getInstance(
             $this->arguments['configuration']
         );
 
         foreach ($configuration->getTestSuiteNames() as $suiteName) {
-            \printf(
-                ' - %s' . \PHP_EOL,
+            printf(
+                ' - %s' . PHP_EOL,
                 $suiteName
             );
         }
@@ -1243,6 +1307,15 @@ class Command
     private function handleListTests(TestSuite $suite, bool $exit): int
     {
         $this->printVersionString();
+
+        $this->warnAboutConflictingOptions(
+            'listTests',
+            [
+                'filter',
+                'groups',
+                'excludeGroups',
+            ]
+        );
 
         $renderer = new TextTestListRenderer;
 
@@ -1262,12 +1335,21 @@ class Command
     {
         $this->printVersionString();
 
+        $this->warnAboutConflictingOptions(
+            'listTestsXml',
+            [
+                'filter',
+                'groups',
+                'excludeGroups',
+            ]
+        );
+
         $renderer = new XmlTestListRenderer;
 
-        \file_put_contents($target, $renderer->render($suite));
+        file_put_contents($target, $renderer->render($suite));
 
-        \printf(
-            'Wrote list of tests that would have been run to %s' . \PHP_EOL,
+        printf(
+            'Wrote list of tests that would have been run to %s' . PHP_EOL,
             $target
         );
 
@@ -1280,7 +1362,7 @@ class Command
 
     private function handleOrderByOption(string $value): void
     {
-        foreach (\explode(',', $value) as $order) {
+        foreach (explode(',', $value) as $order) {
             switch ($order) {
                 case 'default':
                     $this->arguments['executionOrder']        = TestSuiteSorter::ORDER_DEFAULT;
@@ -1325,8 +1407,66 @@ class Command
                     break;
 
                 default:
-                    $this->exitWithErrorMessage("unrecognized --order-by option: $order");
+                    $this->exitWithErrorMessage("unrecognized --order-by option: {$order}");
             }
+        }
+    }
+
+    /**
+     * @psalm-param "listGroups"|"listSuites"|"listTests"|"listTestsXml"|"filter"|"groups"|"excludeGroups"|"testsuite" $key
+     * @psalm-param list<"listGroups"|"listSuites"|"listTests"|"listTestsXml"|"filter"|"groups"|"excludeGroups"|"testsuite"> $keys
+     */
+    private function warnAboutConflictingOptions(string $key, array $keys): void
+    {
+        $warningPrinted = false;
+
+        foreach ($keys as $_key) {
+            if (!empty($this->arguments[$_key])) {
+                printf(
+                    'The %s and %s options cannot be combined, %s is ignored' . PHP_EOL,
+                    $this->mapKeyToOptionForWarning($_key),
+                    $this->mapKeyToOptionForWarning($key),
+                    $this->mapKeyToOptionForWarning($_key)
+                );
+
+                $warningPrinted = true;
+            }
+        }
+
+        if ($warningPrinted) {
+            print PHP_EOL;
+        }
+    }
+
+    /**
+     * @psalm-param "listGroups"|"listSuites"|"listTests"|"listTestsXml"|"filter"|"groups"|"excludeGroups"|"testsuite" $key
+     */
+    private function mapKeyToOptionForWarning(string $key): string
+    {
+        switch ($key) {
+            case 'listGroups':
+                return '--list-groups';
+
+            case 'listSuites':
+                return '--list-suites';
+
+            case 'listTests':
+                return '--list-tests';
+
+            case 'listTestsXml':
+                return '--list-tests-xml';
+
+            case 'filter':
+                return '--filter';
+
+            case 'groups':
+                return '--group';
+
+            case 'excludeGroups':
+                return '--exclude-group';
+
+            case 'testsuite':
+                return '--testsuite';
         }
     }
 }

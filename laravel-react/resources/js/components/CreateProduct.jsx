@@ -192,13 +192,14 @@ const CreateProduct = () => {
         axios
             .post("/product", product)
             .then(response => {
-                console.log(response.data);
+
+                // console.log("result:" + response.data);
             })
             .catch(error => {
-                console.log(error);
+                // console.log(error);
             });
-
-        console.log(product);
+            console.log("result:" + product);
+        // console.log(product);
     };
 
     useEffect(() => {
